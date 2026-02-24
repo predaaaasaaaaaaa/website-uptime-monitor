@@ -1,0 +1,31 @@
+# Ignore Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Environment
+.env
+.env.local
+
+# Data
+*.db
+*.db-journal
+*.log
+data/
+
+# Docker
+*.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
