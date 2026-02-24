@@ -8,9 +8,9 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 
-import telegram.ext as tg
-from telegram import Bot
+from telegram.ext import Application
 
 import config
 from src.database import DatabaseRepository
@@ -20,98 +20,77 @@ from src.monitor import WebsiteChecker, AlertManager, MonitorScheduler
 logger = logging.getLogger(__name__)
 
 
-class UptimeMonitor:
-    """Main application class"""
+async def main():
+    """Main entry point"""
+    logger.info("=" * 60)
+    logger.info("Starting Website Uptime Monitor")
+    logger.info("=" * 60)
     
-    def __init__(self):
-        self.db = None
-        self.scheduler = None
-        self.application = None
-        self.running = False
+    # Initialize database
+    db = DatabaseRepository()
+    logger.info("Database initialized")
     
-    async def start(self):
-        """Start the application"""
-        logger.info("=" * 60)
-        logger.info("Starting Website Uptime Monitor")
-        logger.info("=" * 60)
-        
-        # Initialize database
-        self.db = DatabaseRepository()
-        logger.info("Database initialized")
-        
-        # Create bot
-        bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
-        
-        # Create application
-        self.application = tg.Application.builder().bot(bot).build()
-        
-        # Setup handlers
-        setup_handlers(self.application, self.db)
-        logger.info("Bot handlers registered")
-        
-        # Create alert manager
-        alert_manager = AlertManager(bot, self.db)
-        alert_manager.load_previous_statuses()
-        
-        # Create scheduler
-        self.scheduler = MonitorScheduler(self.db, alert_manager)
-        
-        # Start scheduler in background
-        scheduler_task = asyncio.create_task(self.scheduler.start())
-        
-        self.running = True
-        
-        # Start polling
-        logger.info("Starting bot polling...")
-        
-        try:
-            await self.application.run_polling(
-                drop_pending_updates=True,
-                allowed_updates=['message', 'callback_query']
-            )
-        except KeyboardInterrupt:
-            logger.info("Keyboard interrupt received")
-        finally:
-            await self.shutdown()
+    # Create application
+    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     
-    async def shutdown(self):
-        """Shutdown gracefully"""
+    # Setup handlers
+    setup_handlers(application, db)
+    logger.info("Bot handlers registered")
+    
+    # Create alert manager
+    alert_manager = AlertManager(application.bot, db)
+    alert_manager.load_previous_statuses()
+    
+    # Create scheduler
+    scheduler = MonitorScheduler(db, alert_manager)
+    
+    # Initialize and start
+    await application.initialize()
+    await application.start()
+    
+    # Start scheduler in background
+    scheduler_task = asyncio.create_task(scheduler.start())
+    
+    logger.info("Bot ready! Press Ctrl+C to stop.")
+    
+    try:
+        # Run until interrupted
+        await asyncio.Event().wait()
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Shutting down...")
-        self.running = False
-        
+    finally:
         # Stop scheduler
-        if self.scheduler:
-            await self.scheduler.stop()
+        scheduler.running = False
+        await scheduler.stop()
         
-        # Stop bot
-        if self.application:
-            await self.application.stop()
+        # Stop application
+        try:
+            await application.stop()
+            await application.shutdown()
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
         
         logger.info("Shutdown complete")
 
 
-async def main():
-    """Main entry point"""
-    app = UptimeMonitor()
+if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
     # Setup signal handlers
-    loop = asyncio.get_running_loop()
+    def signal_handler(sig):
+        logger.info(f"Received signal {sig}")
+        loop.stop()
     
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(
-            sig,
-            lambda s=sig: asyncio.create_task(app.shutdown())
-        )
+        try:
+            signal.signal(sig, signal_handler)
+        except (OSError, ValueError):
+            pass
     
-    await app.start()
-
-
-if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
-        logger.info("Exiting...")
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
-        sys.exit(1)
+        logger.info("Interrupted")
+    finally:
+        loop.close()

@@ -4,7 +4,7 @@ import re
 from typing import Callable
 
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 import config
 from src.database import DatabaseRepository
@@ -18,25 +18,25 @@ def setup_handlers(application, db: DatabaseRepository):
     
     # Register command handlers
     application.add_handler(
-        telegram.CommandHandler("start", start_command)
+        CommandHandler("start", start_command)
     )
     application.add_handler(
-        telegram.CommandHandler("help", help_command)
+        CommandHandler("help", help_command)
     )
     application.add_handler(
-        telegram.CommandHandler("add", add_command)
+        CommandHandler("add", add_command)
     )
     application.add_handler(
-        telegram.CommandHandler("remove", remove_command)
+        CommandHandler("remove", remove_command)
     )
     application.add_handler(
-        telegram.CommandHandler("list", list_command)
+        CommandHandler("list", list_command)
     )
     application.add_handler(
-        telegram.CommandHandler("status", status_command)
+        CommandHandler("status", status_command)
     )
     application.add_handler(
-        telegram.CommandHandler("history", history_command)
+        CommandHandler("history", history_command)
     )
     
     # Store db in context
@@ -312,7 +312,3 @@ def is_valid_url(url: str) -> bool:
         r'(?:/?|[/?]\S+)$', re.IGNORECASE)
     
     return bool(url_pattern.match(url))
-
-
-# Import telegram at module level for handlers
-import telegram
